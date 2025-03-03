@@ -1,0 +1,9 @@
+func sub int int -> int do
+    -
+end
+
+const MYNUM 420 1 +
+
+func mynum -> int do
+    MYNUM 1 - 69 +
+end

@@ -1,0 +1,509 @@
+#!/usr/bin/env python3
+
+from enum import Enum, auto
+from dataclasses import dataclass
+import copy
+from typing import TextIO, Any
+import sys
+
+
+def assert_ex(cond: bool, exception: Exception):
+    if not cond:
+        raise exception
+
+
+class ParseError(Exception):
+    def __init__(self, *args: Any) -> None:
+        super().__init__(' '.join(str(a) for a in args))
+
+
+class TokenType(Enum):
+    Identifier = auto()
+    Number = auto()
+    String = auto()
+
+    Arrow = auto()
+    Minus = auto()
+    Plus = auto()
+    Star = auto()
+    Slash = auto()
+
+    Do = auto()
+    End = auto()
+    Func = auto()
+    Const = auto()
+
+
+KEYWORDS: dict[str, TokenType] = {
+    'do': TokenType.Do,
+    'end': TokenType.End,
+    'func': TokenType.Func,
+    'const': TokenType.Const
+}
+
+
+class Intrinsic(Enum):
+    Add = auto()
+    Sub = auto()
+    Mul = auto()
+    Div = auto()
+
+
+def intrinsic2str(i: Intrinsic) -> str:
+    return {
+        Intrinsic.Add: '+',
+        Intrinsic.Sub: '-',
+        Intrinsic.Mul: '*',
+        Intrinsic.Div: '/',
+    }[i]
+
+
+INTRINSICS: dict[TokenType, tuple[Intrinsic, list[str], list[str]]] = {
+    TokenType.Plus: (Intrinsic.Add, ['int', 'int'], ['int']),
+    TokenType.Minus: (Intrinsic.Sub, ['int', 'int'], ['int']),
+    TokenType.Star: (Intrinsic.Mul, ['int', 'int'], ['int']),
+    TokenType.Slash: (Intrinsic.Div, ['int', 'int'], ['int']),
+}
+
+
+TypeStack = list[str]
+
+
+def validate_stack(stack: TypeStack, args: TypeStack, rets: TypeStack):
+    """
+    applies a mutation to a type stack after checking types.
+    """
+    # TODO: catch the errors later down the program, to reraise with line number information
+    assert_ex(len(stack) >= len(args), TypeError(
+        'not enough values on the stack.\n|- expected: ' +
+        ' '.join(args)+'\n`- got: ' + ' '.join(stack)
+    ))
+    oldstack = stack.copy()
+    for arg in args:
+        actual = stack.pop()
+        assert_ex(actual == arg, TypeError('mismatching types on the stack.\n|- got: ' +
+                  ' '.join(oldstack[-len(args):]) + '\n`- but expected: ' + ' '.join(args)))
+    stack.extend(rets)
+
+
+@dataclass
+class Position:
+    line: int
+    column: int
+
+    def __repr__(self):
+        return str(self.line+1)+':'+str(self.column+1)+':'
+
+
+@dataclass
+class Token:
+    ttype: TokenType
+    pos: Position
+    source: str
+
+
+class Lexer:
+    def __init__(self, source: TextIO):
+        self.stream = source
+        self.putback: str | None = None
+        self.lookahead: list[Token] = []
+        self.position = Position(0, 0)
+
+    def peek_char(self) -> str:
+        self.putback = self.get_char()
+        return self.putback
+
+    def consume_char(self) -> str | None:
+        c = self.get_char()
+        self.position.column += 1
+        if c == '\n':
+            self.position.line += 1
+            self.position.column = 0
+        return c
+
+    def get_char(self) -> str | None:
+        if self.putback:
+            c = self.putback
+            self.putback = None
+        else:
+            c = self.stream.read(1)
+        if len(c) < 1:
+            return None
+        return c
+
+    def add_lookahead(self) -> bool:
+        while (ch := self.peek_char()) and ch.isspace():
+            self.consume_char()
+
+        pos = copy.copy(self.position)
+        source = ''
+        if (ch := self.peek_char()) and ch.isalpha():
+            while (ch := self.peek_char()) and ch.isalnum():
+                source += self.consume_char()
+            self.lookahead.append(Token(
+                TokenType.Identifier if source not in KEYWORDS else KEYWORDS[source],
+                pos, source))
+
+        elif (ch := self.peek_char()) and ch.isdigit():
+            while (ch := self.peek_char()) and ch.isdigit():
+                source += self.consume_char()
+            self.lookahead.append(Token(TokenType.Number, pos, source))
+
+        elif self.peek_char() == '"':
+            source += self.consume_char()
+            while self.peek_char() != '"':
+                source += self.consume_char()
+            source += (ch := self.consume_char())
+            assert_ex(ch == '"', ParseError(pos, 'expected string termination'))
+            self.lookahead.append(Token(TokenType.String, pos, source))
+
+        else:
+            match ch := self.consume_char():
+                case '-':
+                    if self.peek_char() == '>':
+                        self.consume_char()
+                        self.lookahead.append(Token(TokenType.Arrow, pos, '->'))
+                    else:
+                        self.lookahead.append(Token(TokenType.Minus, pos, '-'))
+
+                case '+' | '*' | '/':
+                    self.lookahead.append(Token({
+                        '+': TokenType.Plus,
+                        '*': TokenType.Star,
+                        '/': TokenType.Slash,
+                    }[ch], pos, ch))
+
+                case None:
+                    return False
+
+                case ch:
+                    assert_ex(False, ParseError(pos, f'unexpected character: \'{ch}\' ({ord(ch)})'))
+        return True
+
+    def peek(self, offset: int = 0) -> Token:
+        run = True
+        while len(self.lookahead) <= offset and run:
+            run = self.add_lookahead()
+        return self.lookahead[offset]
+
+    def next(self) -> Token:
+        if len(self.lookahead) < 1:
+            self.add_lookahead()
+        return self.lookahead.pop(0)
+
+
+class AstNode:
+    source: str
+
+
+class Expression:
+    pass
+
+
+class Op:
+    pos: Position
+    source: str
+
+
+class IntrinsicOp(Op):
+    def __init__(self, intrinsic: Intrinsic, pos: Position) -> None:
+        self.intrinsic, self.pos = intrinsic, pos
+        self.source = intrinsic2str(self.intrinsic)
+
+
+class PushInt(Op):
+    def __init__(self, value: int, pos: Position, source: str):
+        self.value, self.pos, self.source = value, pos, source
+
+
+class FunctionCall(Op):
+    def __init__(self, name: str, pos: Position):
+        self.name, self.source, self.pos = name, name, pos
+
+
+class ConstDef(AstNode):
+    def __init__(self, name: str, value: int, pos: Position):
+        self.name, self.value, self.pos = name, value, pos
+        self.source = f'const {self.name.strip()} {str(self.value)}\n'
+
+
+class FuncDef(AstNode):
+    def __init__(self, name: str, signature: tuple[list[str], list[str]], body: list[Op],
+                 pos: Position) -> None:
+        self.name, self.signature, self.body, self.pos = name, signature, body, pos
+        self.source = f'func {name.strip()} ' + ' '.join(self.signature[0])+' -> ' + ' '.join(
+            self.signature[1])+' do\n\t' + ' '.join(a.source for a in self.body) + '\nend'
+
+
+class Parser:
+    def __init__(self, lexer: Lexer) -> None:
+        self.lexer = lexer
+        self.constants: dict[str, int] = {}
+        self.funcs: dict[str, tuple[TypeStack, TypeStack]] = {}
+
+    def next_const_expr(self) -> int:
+        stack = []
+        pos = self.lexer.peek().pos
+        source = ''
+        try:
+            while True:
+                match self.lexer.peek().ttype:
+                    case TokenType.Number:
+                        stack.append(int((tok := self.lexer.next()).source))
+                        source += ' ' + tok.source
+
+                    case TokenType.Plus:
+                        source += ' ' + self.lexer.next().source
+                        b = stack.pop()
+                        a = stack.pop()
+                        stack.append(a + b)
+
+                    case TokenType.Minus:
+                        source += ' ' + self.lexer.next().source
+                        b = stack.pop()
+                        a = stack.pop()
+                        stack.append(a - b)
+
+                    case TokenType.Star:
+                        source += ' ' + self.lexer.next().source
+                        b = stack.pop()
+                        a = stack.pop()
+                        stack.append(a * b)
+
+                    case TokenType.Slash:
+                        source += ' ' + self.lexer.next().source
+                        b = stack.pop()
+                        a = stack.pop()
+                        stack.append(a // b)
+
+                    case _:
+                        assert_ex(len(stack) == 1,
+                                  ParseError(pos, 'expected expression with one result'))
+                        return stack[0]
+        except IndexError:
+            assert_ex(len(stack) == 1,
+                      ParseError(pos, 'expected expression with one result'))
+            return stack[0]
+
+    def next_const(self) -> ConstDef:
+        assert (const := self.lexer.next()).ttype == TokenType.Const
+        identifier = self.lexer.next()
+        assert_ex(identifier.ttype == TokenType.Identifier,
+                  ParseError(const.pos, 'expected identifier to assign const value to.'))
+        value = self.next_const_expr()
+        return ConstDef(identifier.source, value, const.pos)
+
+    def parse_op(self, tok: Token, stack: TypeStack) -> Op:
+        if tok.ttype in INTRINSICS:
+            intrinsic, args, rets = INTRINSICS[tok.ttype]
+            validate_stack(stack, args, rets)
+            return IntrinsicOp(intrinsic, tok.pos)
+        elif tok.ttype == TokenType.Identifier and tok.source in self.constants:
+            validate_stack(stack, [], ['int'])
+            return PushInt(self.constants[tok.source], tok.pos, tok.source)
+        elif tok.ttype == TokenType.Identifier and tok.source in self.funcs:
+            args, rets = self.funcs[tok.source]
+            validate_stack(stack, args, rets)
+            return FunctionCall(tok.source, tok.pos)
+        elif tok.ttype == TokenType.Number:
+            validate_stack(stack, [], ['int'])
+            return PushInt(int(tok.source), tok.pos, tok.source)
+        else:
+            assert False, "unexpected token: "+tok.source
+
+    def next_func(self) -> FuncDef:
+        assert (func := self.lexer.next()).ttype == TokenType.Func
+        identifier = self.lexer.next()
+        assert_ex(identifier.ttype == TokenType.Identifier,
+                  ParseError(func.pos, 'expected identifier to assign function to'))
+        args: list[str] = []
+        rets: list[str] = []
+        while (tok := self.lexer.next()).ttype != TokenType.Arrow:
+            args.append(tok.source)
+        assert_ex(tok.ttype == TokenType.Arrow, ParseError(
+            tok.pos, 'function arguments and returns should be seperated by \'->\''))
+        while (tok := self.lexer.next()).ttype == TokenType.Identifier:
+            rets.append(tok.source)
+
+        assert_ex(tok.ttype == TokenType.Do, ParseError(
+            tok.pos, 'expected do keyword to begin function body.'))
+        ops: list[Op] = []
+        stack: TypeStack = args.copy()
+        while (tok := self.lexer.next()).ttype != TokenType.End:
+            try:
+                op = self.parse_op(tok, stack)
+            except TypeError as e:
+                raise ParseError(tok.pos, str(e))
+            ops.append(op)
+        assert_ex(stack == rets, ParseError(tok.pos, 'invalid stack at the end of the function.'))
+        return FuncDef(identifier.source, (args, rets), ops, func.pos)
+
+    def next_tl(self) -> AstNode | None:
+        """
+        Next toplevel.
+        only parses constructs that can occur in the toplevel of the translation unit
+        """
+        try:
+            tok = self.lexer.peek()
+        except IndexError:
+            return None
+        if tok.ttype == TokenType.Const:
+            constdef = self.next_const()
+            self.constants[constdef.name] = constdef.value
+            return constdef
+        elif tok.ttype == TokenType.Func:
+            funcdef = self.next_func()
+            self.funcs[funcdef.name] = funcdef.signature
+            return funcdef
+        else:
+            raise ParseError(tok.pos, f'unexpected token \'{tok.source}\'')
+
+
+class CompilerBackend:
+    asm: str = ''
+
+    def compile_function(self, function: FuncDef):
+        raise NotImplementedError(self.__class__.__name__)
+
+    def pre_compile_function(self, name: str):
+        raise NotImplementedError(self.__class__.__name__)
+
+    def compile_from_parser(self, parser: Parser):
+        while node := parser.next_tl():
+            if isinstance(node, FuncDef):
+                self.pre_compile_function(node.name)
+                self.compile_function(node)
+                self.asm += '\n\n'
+
+    def finalize(self) -> str:
+        try:
+            return self.asm.strip()
+        finally:
+            del self  # not usable anymore so destroy self
+
+
+class QbeBackend(CompilerBackend):
+    types: dict[str, str] = {
+        'int': 'w'
+    }
+    stack_bump: int = 0
+    block_bump: int = 0
+    stack: list[tuple[str, str]] = []
+
+    def pre_compile_function(self, name: str):
+        self.stack_bump = 0
+        self.block_bump = 0
+        self.stack = []
+
+    def ssa(self) -> str:
+        self.stack_bump += 1
+        return f'%s{self.stack_bump-1}'
+
+    def block(self) -> str:
+        self.block_bump += 1
+        return f'@b{self.block_bump-1}'
+
+    def inst(self, inst: str):
+        self.asm += '    '+inst+'\n'
+
+    def pop(self) -> tuple[str, str]:
+        return self.stack.pop()
+
+    def push(self, s: tuple[str, str]):
+        self.stack.append(s)
+
+    def compile_intrinsicop(self, op: IntrinsicOp):
+        match op.intrinsic:
+            case Intrinsic.Add:
+                b, bt = self.pop()
+                a, at = self.pop()
+                c = self.ssa()
+                assert_ex(bt == at, ParseError('mismatching types for + operation'))
+                self.inst(f'{c} ={self.types[bt]} add {a}, {b}')
+                self.push((c, bt))
+            case Intrinsic.Sub:
+                b, bt = self.pop()
+                a, at = self.pop()
+                c = self.ssa()
+                assert_ex(bt == at, ParseError('mismatching types for - operation'))
+                self.inst(f'{c} ={self.types[bt]} sub {a}, {b}')
+                self.push((c, bt))
+
+    def compile_function(self, function: FuncDef):
+        print(function.source)
+        assert_ex(len(function.signature[1]) <= 1, ParseError(
+            function.pos, 'C compatible function can have at most 1 return value.'))
+        self.asm += 'export function '
+        if len(function.signature[1]):
+            self.asm += self.types[function.signature[1][0]]+' '
+        self.asm += '$'+function.name.strip() + '('
+        for idx, arg in enumerate(function.signature[0]):
+            if idx > 0:
+                self.asm += ', '
+            name = self.ssa()
+            self.push((name, arg))
+            self.asm += self.types[arg] + ' ' + name
+        self.asm += ') {\n'
+        self.asm += self.block()+'\n'
+        for op in function.body:
+            if isinstance(op, IntrinsicOp):
+                self.compile_intrinsicop(op)
+            elif isinstance(op, PushInt):
+                self.push((op.value, 'int'))
+            else:
+                assert False, "unreachable: unknown op: "+str(op)
+
+        if len(function.signature[1]):
+            self.inst(f'ret {self.pop()[0]}')
+        self.asm += '}'
+
+
+def shift(argv: list[str]) -> tuple[str, list[str]]:
+    return argv[0], argv[1:]
+
+
+def print_help(prog: str):
+    print(f'''Thijs' stack language compiler.
+usage: {prog} example.tack                  - compiles the .tack file.
+       {prog} -o example.ssa example.tack   - compiles the .tack file, and
+                                              saves it as the specified ssa file.
+       {prog} -h|--help                     - prints this help message.
+
+to use the resulting .ssa file, qbe must be installed. use qbe to compile the
+.ssa file to an assembly file which can be compiled using your standard C compiler.''')
+
+
+if __name__ == '__main__':
+    argv = sys.argv.copy()
+    prog, argv = shift(argv)
+
+    output: str | None = None
+    inputfile: str | None = None
+
+    while len(argv) > 0:
+        arg, argv = shift(argv)
+        if arg in {'-h', '--help'}:
+            print_help(prog)
+            exit(0)
+        elif arg == '-o':
+            output, argv = shift(argv)
+        else:
+            assert inputfile is None, 'too many source files given'
+            inputfile = arg
+    if inputfile is None:
+        print_help(prog)
+        exit(1)
+    if output is None:
+        output = inputfile.removesuffix('.tack')+'.ssa'
+
+    backend = QbeBackend()
+    with open(inputfile) as rf:
+        try:
+            parser = Parser(Lexer(rf))
+            backend.compile_from_parser(parser)
+        except ParseError as e:
+            print(e)
+            exit(1)
+
+    with open(output, 'w') as wf:
+        wf.write(backend.finalize())
