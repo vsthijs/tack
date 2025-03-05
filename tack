@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
 
+# TODO: add support for conditionals (priority)
+
+# TODO: add support for loops (priority)
+
+# TODO: add support for calling functions (priority)
+
+# TODO: add support for declaring extern functions
+
+# TODO: add support for structs
+
+# TODO: add support for more types
+
+# TODO: test intrinsics
+
 from enum import Enum, auto
 from dataclasses import dataclass
 import copy
@@ -17,6 +31,9 @@ class ParseError(Exception):
         super().__init__(' '.join(str(a) for a in args))
 
 
+TYPES: list[str] = ['int',]
+
+
 class TokenType(Enum):
     Identifier = auto()
     Number = auto()
@@ -27,18 +44,46 @@ class TokenType(Enum):
     Plus = auto()
     Star = auto()
     Slash = auto()
+    Lt = auto()
+    Gt = auto()
+    Lte = auto()
+    Gte = auto()
+    Eq = auto()
+    Neq = auto()
+    BwAnd = auto()  # bitwise and
+    BwOr = auto()  # bitwise or
+    Lsh = auto()
+    Rsh = auto()
 
     Do = auto()
     End = auto()
     Func = auto()
     Const = auto()
+    If = auto()
+    Else = auto()
+    Not = auto()
+    Neg = auto()
+    Dup = auto()
+    Drop = auto()
+    Swap = auto()
+    Rot = auto()
+    Over = auto()
 
 
 KEYWORDS: dict[str, TokenType] = {
     'do': TokenType.Do,
     'end': TokenType.End,
     'func': TokenType.Func,
-    'const': TokenType.Const
+    'const': TokenType.Const,
+    'if': TokenType.If,
+    'else': TokenType.Else,
+    'not': TokenType.Not,
+    'neg': TokenType.Neg,
+    'dup': TokenType.Dup,
+    'drop': TokenType.Drop,
+    'swap': TokenType.Swap,
+    'rot': TokenType.Rot,
+    'over': TokenType.Over,
 }
 
 
@@ -47,6 +92,23 @@ class Intrinsic(Enum):
     Sub = auto()
     Mul = auto()
     Div = auto()
+    Lt = auto()
+    Gt = auto()
+    Lte = auto()
+    Gte = auto()
+    Eq = auto()
+    Neq = auto()
+    BwAnd = auto()
+    BwOr = auto()
+    Lsh = auto()
+    Rsh = auto()
+    Not = auto()
+    Neg = auto()
+    Dup = auto()
+    Drop = auto()
+    Swap = auto()
+    Rot = auto()
+    Over = auto()
 
 
 def intrinsic2str(i: Intrinsic) -> str:
@@ -55,6 +117,23 @@ def intrinsic2str(i: Intrinsic) -> str:
         Intrinsic.Sub: '-',
         Intrinsic.Mul: '*',
         Intrinsic.Div: '/',
+        Intrinsic.Lt: '<',
+        Intrinsic.Gt: '>',
+        Intrinsic.Lte: '<=',
+        Intrinsic.Gte: '>=',
+        Intrinsic.Eq: '=',
+        Intrinsic.Neq: '!=',
+        Intrinsic.BwAnd: '&',
+        Intrinsic.BwOr: '|',
+        Intrinsic.Lsh: '<<',
+        Intrinsic.Rsh: '>>',
+        Intrinsic.Not: 'not',
+        Intrinsic.Neg: 'neg',
+        Intrinsic.Dup: 'dup',
+        Intrinsic.Drop: 'drop',
+        Intrinsic.Swap: 'swap',
+        Intrinsic.Rot: 'rot',
+        Intrinsic.Over: 'over',
     }[i]
 
 
@@ -63,8 +142,24 @@ INTRINSICS: dict[TokenType, tuple[Intrinsic, list[str], list[str]]] = {
     TokenType.Minus: (Intrinsic.Sub, ['int', 'int'], ['int']),
     TokenType.Star: (Intrinsic.Mul, ['int', 'int'], ['int']),
     TokenType.Slash: (Intrinsic.Div, ['int', 'int'], ['int']),
+    TokenType.Lt: (Intrinsic.Lt, ['int', 'int'], ['int']),
+    TokenType.Gt: (Intrinsic.Gt, ['int', 'int'], ['int']),
+    TokenType.Lte: (Intrinsic.Lte, ['int', 'int'], ['int']),
+    TokenType.Gte: (Intrinsic.Gte, ['int', 'int'], ['int']),
+    TokenType.Eq: (Intrinsic.Eq, ['int', 'int'], ['int']),
+    TokenType.Neq: (Intrinsic.Neq, ['int', 'int'], ['int']),
+    TokenType.BwAnd: (Intrinsic.BwAnd, ['int', 'int'], ['int']),
+    TokenType.BwOr: (Intrinsic.BwOr, ['int', 'int'], ['int']),
+    TokenType.Lsh: (Intrinsic.Lsh, ['int', 'int'], ['int']),
+    TokenType.Rsh: (Intrinsic.Rsh, ['int', 'int'], ['int']),
+    TokenType.Not: (Intrinsic.Not, ['int'], ['int']),
+    TokenType.Neg: (Intrinsic.Neg, ['int'], ['int']),
+    TokenType.Dup: (Intrinsic.Dup, ['a'], ['a', 'a']),
+    TokenType.Drop: (Intrinsic.Drop, ['a'], []),
+    TokenType.Swap: (Intrinsic.Swap, ['a', 'b'], ['b', 'a']),
+    TokenType.Rot: (Intrinsic.Rot, ['a', 'b', 'c'], ['b', 'c', 'a']),
+    TokenType.Over: (Intrinsic.Over, ['a', 'b'], ['a', 'b', 'a']),
 }
-
 
 TypeStack = list[str]
 
@@ -73,16 +168,25 @@ def validate_stack(stack: TypeStack, args: TypeStack, rets: TypeStack):
     """
     applies a mutation to a type stack after checking types.
     """
-    # TODO: catch the errors later down the program, to reraise with line number information
     assert_ex(len(stack) >= len(args), TypeError(
         'not enough values on the stack.\n|- expected: ' +
         ' '.join(args)+'\n`- got: ' + ' '.join(stack)
     ))
     oldstack = stack.copy()
+    generics: dict[str, str] = {}
     for arg in args:
         actual = stack.pop()
-        assert_ex(actual == arg, TypeError('mismatching types on the stack.\n|- got: ' +
-                  ' '.join(oldstack[-len(args):]) + '\n`- but expected: ' + ' '.join(args)))
+        if arg not in TYPES:
+            if arg not in generics:
+                generics[arg] = actual
+            else:
+                assert_ex(actual == generics[arg],
+                          TypeError('mismatching types on the stack.\n|- got: ' +
+                                    ' '.join(oldstack[-len(args):]) + '\n`- but expected: '
+                                    + ' '.join(args)))
+        else:
+            assert_ex(actual == arg, TypeError('mismatching types on the stack.\n|- got: ' +
+                                               ' '.join(oldstack[-len(args):]) + '\n`- but expected: ' + ' '.join(args)))
     stack.extend(rets)
 
 
@@ -166,17 +270,34 @@ class Lexer:
                     else:
                         self.lookahead.append(Token(TokenType.Minus, pos, '-'))
 
-                case '+' | '*' | '/':
+                case '+' | '*' | '/' | '=' | '&' | '|':
                     self.lookahead.append(Token({
                         '+': TokenType.Plus,
                         '*': TokenType.Star,
                         '/': TokenType.Slash,
+                        '=': TokenType.Eq,
+                        '&': TokenType.BwAnd,
+                        '|': TokenType.BwOr,
                     }[ch], pos, ch))
+
+                case '<' | '>' | '!':
+                    if self.peek_char() == '=':
+                        self.consume_char()
+                        self.lookahead.append(
+                            Token({'<': TokenType.Lte, '>': TokenType.Gte, '!': TokenType.Neq}[ch], pos, ch+'='))
+                    elif self.peek_char() == ch and ch in '<>':
+                        self.consume_char()
+                        self.lookahead.append(
+                            Token({'<': TokenType.Lsh, '>': TokenType.Rsh}[ch], pos, ch+ch)
+                        )
+                    else:
+                        self.lookahead.append(
+                            Token({'<': TokenType.Lt, '>': TokenType.Gt}[ch], pos, ch))
 
                 case None:
                     return False
 
-                case ch:
+                case _:
                     assert_ex(False, ParseError(pos, f'unexpected character: \'{ch}\' ({ord(ch)})'))
         return True
 
@@ -233,6 +354,15 @@ class FuncDef(AstNode):
         self.name, self.signature, self.body, self.pos = name, signature, body, pos
         self.source = f'func {name.strip()} ' + ' '.join(self.signature[0])+' -> ' + ' '.join(
             self.signature[1])+' do\n\t' + ' '.join(a.source for a in self.body) + '\nend'
+
+
+class Conditional(Op):
+    def __init__(self, if_true: list[Op], if_false: list[Op], pos: Position):
+        self.if_true, self.if_false, self.pos = if_true, if_false, pos
+        self.source = 'if ' + ' '.join(a.source for a in self.if_true)
+        if len(if_false):
+            self.source += ' else ' + ' '.join(a.source for a in self.if_false)
+        self.source += ' end'
 
 
 class Parser:
@@ -296,7 +426,10 @@ class Parser:
     def parse_op(self, tok: Token, stack: TypeStack) -> Op:
         if tok.ttype in INTRINSICS:
             intrinsic, args, rets = INTRINSICS[tok.ttype]
-            validate_stack(stack, args, rets)
+            try:
+                validate_stack(stack, args, rets)
+            except TypeError as e:
+                raise ParseError(tok.pos, tok.source, str(e))
             return IntrinsicOp(intrinsic, tok.pos)
         elif tok.ttype == TokenType.Identifier and tok.source in self.constants:
             validate_stack(stack, [], ['int'])
@@ -308,8 +441,27 @@ class Parser:
         elif tok.ttype == TokenType.Number:
             validate_stack(stack, [], ['int'])
             return PushInt(int(tok.source), tok.pos, tok.source)
+        elif tok.ttype == TokenType.If:
+            validate_stack(stack, ['int'], [])
+            if_true: list[Op] = []
+            if_true_stack = stack.copy()
+            while self.lexer.peek().ttype not in [TokenType.End, TokenType.Else]:
+                if_true.append(self.parse_op(self.lexer.next(), if_true_stack))
+            if (end := self.lexer.next()).ttype == TokenType.End:
+                assert_ex(if_true_stack == stack, ParseError(
+                    end.pos, 'stack has been changed after if block'))
+                return Conditional(if_true, [], tok.pos)
+            if_false: list[Op] = []
+            if_false_stack = stack.copy()
+            while self.lexer.peek().ttype != TokenType.End:
+                if_false.append(self.parse_op(self.lexer.next(), if_false_stack))
+            assert_ex((end := self.lexer.next()).ttype == TokenType.End,
+                      ParseError(end.pos, 'if-else construct was not ended with end'))
+            assert_ex(if_false_stack == if_true_stack, ParseError(
+                end.pos, 'if-else construct has two different stack results.'))
+            return Conditional(if_true, if_false, tok.pos)
         else:
-            assert False, "unexpected token: "+tok.source
+            assert False, "unexpected token: "+str(tok)
 
     def next_func(self) -> FuncDef:
         assert (func := self.lexer.next()).ttype == TokenType.Func
@@ -414,20 +566,148 @@ class QbeBackend(CompilerBackend):
 
     def compile_intrinsicop(self, op: IntrinsicOp):
         match op.intrinsic:
-            case Intrinsic.Add:
+            case Intrinsic.Add | Intrinsic.Sub | Intrinsic.Mul | Intrinsic.Div:
                 b, bt = self.pop()
                 a, at = self.pop()
                 c = self.ssa()
-                assert_ex(bt == at, ParseError('mismatching types for + operation'))
-                self.inst(f'{c} ={self.types[bt]} add {a}, {b}')
+                assert_ex(bt == at, ParseError(
+                    op.pos, f'mismatching types for {intrinsic2str(op.intrinsic)} operation'))
+                inst = op.intrinsic.name.lower()
+                self.inst(f'{c} ={self.types[bt]} {inst} {a}, {b}')
                 self.push((c, bt))
-            case Intrinsic.Sub:
+
+            case Intrinsic.Lt | Intrinsic.Gt | Intrinsic.Lte | Intrinsic.Gte:
+                # TODO: introduce bool type
                 b, bt = self.pop()
                 a, at = self.pop()
                 c = self.ssa()
-                assert_ex(bt == at, ParseError('mismatching types for - operation'))
-                self.inst(f'{c} ={self.types[bt]} sub {a}, {b}')
+                assert_ex(bt == at, ParseError(
+                    op.pos, f'mismatching types for {intrinsic2str(op.intrinsic)} operation'))
+                assert_ex(bt == 'int', ParseError(
+                    op.pos, f'{intrinsic2str(op.intrinsic)} operation only supports int type'))
+                is_signed = not bt.startswith('u')
+                inst = 'c' + ('s' if is_signed else 'u') + {
+                    Intrinsic.Lt: 'lt',
+                    Intrinsic.Gt: 'gt',
+                    Intrinsic.Lte: 'le',
+                    Intrinsic.Gte: 'ge'
+                }[op.intrinsic] + self.types[bt]
+                self.inst(f'{c} ={self.types[bt]} {inst} {a}, {b}')
                 self.push((c, bt))
+
+            case Intrinsic.Eq | Intrinsic.Neq:
+                # TODO: introduce bool type
+                b, bt = self.pop()
+                a, at = self.pop()
+                c = self.ssa()
+                assert_ex(bt == at, ParseError(
+                    op.pos, f'mismatching types for {intrinsic2str(op.intrinsic)} operation'))
+                inst = 'c'+{Intrinsic.Eq: 'eq', Intrinsic.Neq: 'ne'}[op.intrinsic] + self.types[bt]
+                self.inst(f'{c} ={self.types[bt]} {inst} {a}, {b}')
+                self.push((c, bt))
+
+            case Intrinsic.BwAnd | Intrinsic.BwOr:
+                b, bt = self.pop()
+                a, at = self.pop()
+                c = self.ssa()
+                assert_ex(bt == at, ParseError(
+                    op.pos, f'mismatching types for {intrinsic2str(op.intrinsic)} operation'))
+                inst = {Intrinsic.BwAnd: 'and', Intrinsic.BwOr: 'or'}[op.intrinsic]
+                self.inst(f'{c} ={self.types[bt]} {inst} {a}, {b}')
+                self.push((c, bt))
+
+            case Intrinsic.Lsh | Intrinsic.Rsh:
+                b, bt = self.pop()
+                a, at = self.pop()
+                c = self.ssa()
+                assert_ex(bt in ['int'] and at == 'int', ParseError(
+                    op.pos, f'mismatching types for {intrinsic2str(op.intrinsic)} operation'))
+                inst = {Intrinsic.Lsh: 'shl', Intrinsic.Rsh: 'shr'}[op.intrinsic]
+                self.inst(f'{c} ={self.types[bt]} {inst} {b}, {a}')
+                self.push((c, bt))
+
+            case Intrinsic.Not:
+                # TODO: bool
+                a, at = self.pop()
+                b = self.ssa()
+                assert_ex(
+                    at in ['int'],
+                    ParseError(op.pos,
+                               f'expected int or bool value for {intrinsic2str(op.intrinsic)} operation')
+                )
+                self.inst(f'{b} ={self.types[at]} ceq{self.types[bt]} {a}, 0')
+                self.push((b, at))
+
+            case Intrinsic.Neg:
+                a, at = self.pop()
+                b = self.ssa()
+                assert_ex(at.endswith('int'),
+                          ParseError(op.loc, f'expected integer value for {intrinsic2str(op.intrinsic)}'))
+                self.inst(f'{b} ={self.types[at]} neg {a}')
+                self.push((b, at))
+
+            case Intrinsic.Dup:
+                self.push(self.stack[-1])
+
+            case Intrinsic.Drop:
+                self.pop()
+
+            case Intrinsic.Swap:
+                b = self.pop()
+                a = self.pop()
+                self.push(b)
+                self.push(a)
+
+            case Intrinsic.Rot:  # a b c -> b c a
+                c = self.pop()
+                b = self.pop()
+                a = self.pop()
+                self.push(b)
+                self.push(c)
+                self.push(a)
+
+            case Intrinsic.Over:
+                self.push(self.stack[-2])
+
+    def compile_conditional(self, op: Conditional):
+        if_true_block = self.block()
+        if_false_block = self.block()
+        end_block = self.block()
+
+        condition = self.pop()
+        self.inst(f'jnz {condition[0]}, {if_true_block}, {if_false_block}')
+        original_stack = self.stack.copy()
+
+        self.asm += if_true_block+'\n'
+        for operation in op.if_true:
+            self.compile_op(operation)
+        self.inst(f'jmp {end_block}')
+        if_true_stack = self.stack
+
+        self.stack = original_stack
+        self.asm += if_false_block+'\n'
+        for operation in op.if_false:
+            self.compile_op(operation)
+        self.inst(f'jmp {end_block}')
+        if_false_stack = self.stack
+
+        self.asm += end_block+'\n'
+        for idx, (itr, ifa) in enumerate(zip(if_true_stack, if_false_stack)):
+            if itr[0] != ifa[0]:
+                result = self.ssa()
+                self.inst(f'{result} ={self.types[itr[1]]} phi '
+                          + f'{if_true_block} {itr[0]}, {if_false_block} {ifa[0]}')
+                self.stack[idx] = (result, *self.stack[idx][1:])
+
+    def compile_op(self, op: Op):
+        if isinstance(op, IntrinsicOp):
+            self.compile_intrinsicop(op)
+        elif isinstance(op, PushInt):
+            self.push((op.value, 'int'))
+        elif isinstance(op, Conditional):
+            self.compile_conditional(op)
+        else:
+            assert False, "unreachable: unknown op: "+str(op)
 
     def compile_function(self, function: FuncDef):
         print(function.source)
@@ -446,13 +726,7 @@ class QbeBackend(CompilerBackend):
         self.asm += ') {\n'
         self.asm += self.block()+'\n'
         for op in function.body:
-            if isinstance(op, IntrinsicOp):
-                self.compile_intrinsicop(op)
-            elif isinstance(op, PushInt):
-                self.push((op.value, 'int'))
-            else:
-                assert False, "unreachable: unknown op: "+str(op)
-
+            self.compile_op(op)
         if len(function.signature[1]):
             self.inst(f'ret {self.pop()[0]}')
         self.asm += '}'
@@ -502,6 +776,7 @@ if __name__ == '__main__':
             parser = Parser(Lexer(rf))
             backend.compile_from_parser(parser)
         except ParseError as e:
+            raise e
             print(e)
             exit(1)
 
