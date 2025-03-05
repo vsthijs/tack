@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
 
-# TODO: add support for conditionals (priority)
-
 # TODO: add support for loops (priority)
 
-# TODO: add support for calling functions (priority)
-
 # TODO: add support for declaring extern functions
-
-# TODO: add support for structs
-
-# TODO: add support for more types
+# - TODO: add support for bool, uint, ptr
+# - TODO: add support for structs
 
 # TODO: test intrinsics
 
@@ -182,7 +176,8 @@ def validate_stack(stack: TypeStack, args: TypeStack, rets: TypeStack):
             else:
                 assert_ex(actual == generics[arg],
                           TypeError('mismatching types on the stack.\n|- got: ' +
-                                    ' '.join(oldstack[-len(args):]) + '\n`- but expected: '
+                                    ' '.join(
+                                        oldstack[-len(args):]) + '\n`- but expected: '
                                     + ' '.join(args)))
         else:
             assert_ex(actual == arg, TypeError('mismatching types on the stack.\n|- got: ' +
@@ -258,7 +253,8 @@ class Lexer:
             while self.peek_char() != '"':
                 source += self.consume_char()
             source += (ch := self.consume_char())
-            assert_ex(ch == '"', ParseError(pos, 'expected string termination'))
+            assert_ex(ch == '"', ParseError(
+                pos, 'expected string termination'))
             self.lookahead.append(Token(TokenType.String, pos, source))
 
         else:
@@ -266,7 +262,8 @@ class Lexer:
                 case '-':
                     if self.peek_char() == '>':
                         self.consume_char()
-                        self.lookahead.append(Token(TokenType.Arrow, pos, '->'))
+                        self.lookahead.append(
+                            Token(TokenType.Arrow, pos, '->'))
                     else:
                         self.lookahead.append(Token(TokenType.Minus, pos, '-'))
 
@@ -288,7 +285,8 @@ class Lexer:
                     elif self.peek_char() == ch and ch in '<>':
                         self.consume_char()
                         self.lookahead.append(
-                            Token({'<': TokenType.Lsh, '>': TokenType.Rsh}[ch], pos, ch+ch)
+                            Token({'<': TokenType.Lsh, '>': TokenType.Rsh}[
+                                  ch], pos, ch+ch)
                         )
                     else:
                         self.lookahead.append(
@@ -298,7 +296,8 @@ class Lexer:
                     return False
 
                 case _:
-                    assert_ex(False, ParseError(pos, f'unexpected character: \'{ch}\' ({ord(ch)})'))
+                    assert_ex(False, ParseError(
+                        pos, f'unexpected character: \'{ch}\' ({ord(ch)})'))
         return True
 
     def peek(self, offset: int = 0) -> Token:
@@ -338,8 +337,8 @@ class PushInt(Op):
 
 
 class FunctionCall(Op):
-    def __init__(self, name: str, pos: Position):
-        self.name, self.source, self.pos = name, name, pos
+    def __init__(self, name: str, signature: tuple[TypeStack, TypeStack], pos: Position):
+        self.name, self.signature, self.source, self.pos = name, signature, name, pos
 
 
 class ConstDef(AstNode):
@@ -349,8 +348,7 @@ class ConstDef(AstNode):
 
 
 class FuncDef(AstNode):
-    def __init__(self, name: str, signature: tuple[list[str], list[str]], body: list[Op],
-                 pos: Position) -> None:
+    def __init__(self, name: str, signature: tuple[TypeStack, TypeStack], body: list[Op], pos: Position) -> None:
         self.name, self.signature, self.body, self.pos = name, signature, body, pos
         self.source = f'func {name.strip()} ' + ' '.join(self.signature[0])+' -> ' + ' '.join(
             self.signature[1])+' do\n\t' + ' '.join(a.source for a in self.body) + '\nend'
@@ -437,7 +435,8 @@ class Parser:
         elif tok.ttype == TokenType.Identifier and tok.source in self.funcs:
             args, rets = self.funcs[tok.source]
             validate_stack(stack, args, rets)
-            return FunctionCall(tok.source, tok.pos)
+            print(tok.pos, 'function call', tok.source, args, rets)
+            return FunctionCall(tok.source, (args, rets), tok.pos)
         elif tok.ttype == TokenType.Number:
             validate_stack(stack, [], ['int'])
             return PushInt(int(tok.source), tok.pos, tok.source)
@@ -454,7 +453,8 @@ class Parser:
             if_false: list[Op] = []
             if_false_stack = stack.copy()
             while self.lexer.peek().ttype != TokenType.End:
-                if_false.append(self.parse_op(self.lexer.next(), if_false_stack))
+                if_false.append(self.parse_op(
+                    self.lexer.next(), if_false_stack))
             assert_ex((end := self.lexer.next()).ttype == TokenType.End,
                       ParseError(end.pos, 'if-else construct was not ended with end'))
             assert_ex(if_false_stack == if_true_stack, ParseError(
@@ -487,7 +487,8 @@ class Parser:
             except TypeError as e:
                 raise ParseError(tok.pos, str(e))
             ops.append(op)
-        assert_ex(stack == rets, ParseError(tok.pos, 'invalid stack at the end of the function.'))
+        assert_ex(stack == rets, ParseError(
+            tok.pos, 'invalid stack at the end of the function.'))
         return FuncDef(identifier.source, (args, rets), ops, func.pos)
 
     def next_tl(self) -> AstNode | None:
@@ -602,7 +603,8 @@ class QbeBackend(CompilerBackend):
                 c = self.ssa()
                 assert_ex(bt == at, ParseError(
                     op.pos, f'mismatching types for {intrinsic2str(op.intrinsic)} operation'))
-                inst = 'c'+{Intrinsic.Eq: 'eq', Intrinsic.Neq: 'ne'}[op.intrinsic] + self.types[bt]
+                inst = 'c'+{Intrinsic.Eq: 'eq',
+                            Intrinsic.Neq: 'ne'}[op.intrinsic] + self.types[bt]
                 self.inst(f'{c} ={self.types[bt]} {inst} {a}, {b}')
                 self.push((c, bt))
 
@@ -612,7 +614,8 @@ class QbeBackend(CompilerBackend):
                 c = self.ssa()
                 assert_ex(bt == at, ParseError(
                     op.pos, f'mismatching types for {intrinsic2str(op.intrinsic)} operation'))
-                inst = {Intrinsic.BwAnd: 'and', Intrinsic.BwOr: 'or'}[op.intrinsic]
+                inst = {Intrinsic.BwAnd: 'and',
+                        Intrinsic.BwOr: 'or'}[op.intrinsic]
                 self.inst(f'{c} ={self.types[bt]} {inst} {a}, {b}')
                 self.push((c, bt))
 
@@ -622,7 +625,8 @@ class QbeBackend(CompilerBackend):
                 c = self.ssa()
                 assert_ex(bt in ['int'] and at == 'int', ParseError(
                     op.pos, f'mismatching types for {intrinsic2str(op.intrinsic)} operation'))
-                inst = {Intrinsic.Lsh: 'shl', Intrinsic.Rsh: 'shr'}[op.intrinsic]
+                inst = {Intrinsic.Lsh: 'shl',
+                        Intrinsic.Rsh: 'shr'}[op.intrinsic]
                 self.inst(f'{c} ={self.types[bt]} {inst} {b}, {a}')
                 self.push((c, bt))
 
@@ -699,6 +703,23 @@ class QbeBackend(CompilerBackend):
                           + f'{if_true_block} {itr[0]}, {if_false_block} {ifa[0]}')
                 self.stack[idx] = (result, *self.stack[idx][1:])
 
+    def compile_function_call(self, op: FunctionCall):
+        args, rets = op.signature
+        inst = ''
+        inst += f'call ${op.name}('
+        for idx, (argtype, sf) in enumerate(
+                zip(args, reversed([self.pop() for i in args]))):
+            if idx > 0:
+                inst += ', '
+            inst += self.types[argtype] + ' ' + str(sf[0])
+            assert argtype == sf[1]
+        inst += ')'
+        if len(rets):
+            result = self.ssa()
+            inst = f'{result} ={self.types[rets[0]]} ' + inst
+            self.push((result, rets[0]))
+        self.inst(inst)
+
     def compile_op(self, op: Op):
         if isinstance(op, IntrinsicOp):
             self.compile_intrinsicop(op)
@@ -706,6 +727,8 @@ class QbeBackend(CompilerBackend):
             self.push((op.value, 'int'))
         elif isinstance(op, Conditional):
             self.compile_conditional(op)
+        elif isinstance(op, FunctionCall):
+            self.compile_function_call(op)
         else:
             assert False, "unreachable: unknown op: "+str(op)
 
@@ -729,6 +752,8 @@ class QbeBackend(CompilerBackend):
             self.compile_op(op)
         if len(function.signature[1]):
             self.inst(f'ret {self.pop()[0]}')
+        else:
+            self.inst('ret')
         self.asm += '}'
 
 

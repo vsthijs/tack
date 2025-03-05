@@ -1,15 +1,6 @@
-func eq int int -> int do = end
-func lt int int -> int do < end
-func gt int int -> int do > end
-func lte int int -> int do <= end
-func gte int int -> int do >= end
-func neq int int -> int do != end
-func add int int -> int do + end
-func sub int int -> int do - end
-func mul int int -> int do * end
-func div int int -> int do / end
 func and int int -> int do & end
 func or int int -> int do | end
-func shl int int -> int do << end
-func shr int int -> int do >> end
 
+func test int int -> int do
+	and
+end
