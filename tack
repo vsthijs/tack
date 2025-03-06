@@ -13,6 +13,8 @@ import subprocess
 import tempfile
 import os
 
+DEBUG = True
+
 
 def assert_ex(cond: bool, exception: Exception):
     if not cond:
@@ -972,4 +974,11 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    if DEBUG:
+        main()
+    else:
+        try:
+            main()
+        except Exception as e:
+            eprint(e)
+            exit(1)
