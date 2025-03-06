@@ -3,4 +3,5 @@
 *.ssa
 *.a
 *.out
-test
+examples/*
+!examples/*.tack

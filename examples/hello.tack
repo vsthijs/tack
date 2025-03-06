@@ -1,0 +1,7 @@
+func puts ptr -> extern
+
+func main int ptr -> int do
+    drop drop
+    "Hello, World!" puts
+    0
+end
