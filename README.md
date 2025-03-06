@@ -21,9 +21,11 @@ dependencies:
 the following main function is equivalent to a C hello world program.
 
 ```tack
-func main -> int do
-    "Hello, World!" puts
-    0
+func main int ptr -> int do
+    drop drop  # ignore argc and argv
+    "Hello, World!" puts  # print the string to stdout
+    drop  # ignore the result of puts
+    0  # return 0 as exitcode
 end
 ```
 
@@ -31,4 +33,16 @@ The language is stack-based, so the syntax looks like
 [FORTH](https://en.wikipedia.org/wiki/Forth_(programming_language)). A value
 like `0` or `"Hello, World!"` is pushed to the stack, and when the `puts`
 function from libc is called, it pops the value from stack. Then the `0` that
-is pushed in the end of the function is the return value.
+is pushed in the end of the function is the return value. See [examples](examples/]
+for more syntax.
+
+## Compatibility
+
+In the standard library are bindings for libc like stdio.tack and stdlib.tack.
+To comply with the sysv calling convention, only one return value is possible.
+To return multiple values you will have to find workarounds just like in C.
+To add you own bindings, add them like so:
+
+```tack
+func my_c_function int -> int extern
+```
