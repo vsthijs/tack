@@ -4,8 +4,7 @@
 
 # TODO: test intrinsics
 
-# TODO: add include guard
-# to not keep recursivly importing already imported files
+# TODO: verify main function
 
 from enum import Enum, auto
 from dataclasses import dataclass
@@ -464,12 +463,16 @@ class Conditional(Op):
 
 
 class Parser:
-    def __init__(self, lexer: Lexer, include_path: list[str] = []) -> None:
+    def __init__(self, lexer: Lexer, include_path: list[str] = [],
+                 include_history: list[str] = [],
+                 included_from: str | None = None) -> None:
         self.lexer = lexer
+        self.include_history = include_history
         self.include_path = include_path
         self.other_parser: Parser | None = None
         self.constants: dict[str, int] = {}
         self.funcs: dict[str, tuple[TypeStack, TypeStack]] = {}
+        self.parent = included_from
 
     def next_const_expr(self) -> int:
         stack = []
@@ -624,8 +627,12 @@ class Parser:
                     break
             if not found:
                 return False
+        if path in self.include_history:
+            return True  # just skip without errors
+        self.include_history.append(path)
         file = open(path)
-        self.other_parser = Parser(Lexer(file))
+        self.other_parser = Parser(
+            Lexer(file), self.include_path, self.include_history)
         return True
 
     def next_tl(self) -> AstNode | None:

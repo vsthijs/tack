@@ -1,7 +1,0 @@
-include "stdio.tack"
-
-func main ptr int -> int do
-	drop drop
-	"hello world" puts # print hello world to stdout
-	drop 0
-end
