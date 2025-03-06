@@ -8,6 +8,8 @@
 
 # TODO: add memory read and write intrinsics
 
+# TODO: add typedef
+
 from enum import Enum, auto
 from dataclasses import dataclass
 import copy
@@ -326,8 +328,8 @@ class Lexer:
 
         pos = copy.copy(self.position)
         source = ''
-        if (ch := self.peek_char()) and ch.isalpha():
-            while (ch := self.peek_char()) and ch.isalnum():
+        if (ch := self.peek_char()) and (ch.isalpha() or ch in '_'):
+            while (ch := self.peek_char()) and (ch.isalnum() or ch in '_.'):
                 source += self.consume_char()
             self.lookahead.append(Token(
                 TokenType.Identifier if source not in KEYWORDS else KEYWORDS[source],
