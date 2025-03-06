@@ -6,6 +6,8 @@
 
 # TODO: verify main function
 
+# TODO: add memory read and write intrinsics
+
 from enum import Enum, auto
 from dataclasses import dataclass
 import copy
