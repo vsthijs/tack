@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
-# TODO: add support for loops
+# TODO: add loops
 # TODO: test intrinsics
+# TODO: add include statement
+# TODO: add strings
 
 from enum import Enum, auto
 from dataclasses import dataclass
@@ -20,6 +22,16 @@ def assert_ex(cond: bool, exception: Exception):
 
 def eprint(*values: str, sep: str = ' ', end='\n', **kwargs):
     return print(*values, sep=sep, end=end, file=sys.stderr, **kwargs)
+
+
+def get_stdlib() -> str:
+    basepath = os.path.dirname(__file__)
+    if os.path.exists(path := os.path.join(basepath, 'libtack.a')):
+        return path
+    elif os.path.exists(path := os.path.join(basepath, 'lib', 'libtack.a')):
+        return path
+    eprint(f'{sys.argv[0]}: error: could not find libtack.a')
+    exit(1)
 
 
 class ParseError(Exception):
@@ -825,13 +837,14 @@ flags:
     -c                     - compile to object file
     -l <file>              - link with the given file. can be .o or .a
                              files. (only when compiling to binary)
+    -nostdlib              - do not link with tack's standard library
 
 to use the resulting .ssa file, qbe must be installed. use qbe to compile the
 .ssa file to an assembly file which can be compiled using your standard C
 compiler.''')
 
 
-if __name__ == '__main__':
+def parse_args() -> tuple[str, str, str, list[str]]:
     argv = sys.argv.copy()
     prog, argv = shift(argv)
 
@@ -839,6 +852,7 @@ if __name__ == '__main__':
     inputfile: str | None = None
     output_fmt: str | None = None
     link_list: list[str] = []
+    need_stdlib: bool = True
 
     while len(argv) > 0:
         arg, argv = shift(argv)
@@ -856,9 +870,12 @@ if __name__ == '__main__':
         elif arg == '-l':
             file, argv = shift(argv)
             link_list.append(file)
+        elif arg == '-nostdlib':
+            need_stdlib = False
         else:
             assert inputfile is None, 'too many source files given'
             inputfile = arg
+
     if inputfile is None:
         print_help(prog)
         exit(1)
@@ -866,6 +883,16 @@ if __name__ == '__main__':
         output = inputfile.removesuffix('.tack')+'.'+output_fmt
     elif output is None:
         output = inputfile.removesuffix('.tack')
+
+    stdlib = get_stdlib()
+    if need_stdlib and stdlib not in link_list:
+        link_list.append(stdlib)
+
+    return output, inputfile, output_fmt, link_list
+
+
+def main():
+    output, inputfile, output_fmt, link_list = parse_args()
 
     backend = QbeBackend()
     with open(inputfile) as rf:
@@ -918,3 +945,7 @@ if __name__ == '__main__':
 
         os.remove(ofile)
         exit(cc_code)
+
+
+if __name__ == '__main__':
+    main()

@@ -3,7 +3,7 @@ OFILES := $(CFILES:.c=.o)
 
 CFLAGS :=
 
-DST ?= ../libtack.a
+DST ?= libtack.a
 
 %.o: %.c
 	cc -c -o $@ $(CFLAGS) $<
