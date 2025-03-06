@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 
+# TODO: add include statement
 # TODO: add loops
 # TODO: test intrinsics
-# TODO: add include statement
-# TODO: add strings
 
 from enum import Enum, auto
 from dataclasses import dataclass
@@ -382,6 +381,11 @@ class PushInt(Op):
         self.value, self.pos, self.source = value, pos, source
 
 
+class PushStr(Op):
+    def __init__(self, value: str, pos: Position, source: str):
+        self.value, self.pos, self.source = value, pos, source
+
+
 class FunctionCall(Op):
     def __init__(self, name: str, signature: tuple[TypeStack, TypeStack], pos: Position):
         self.name, self.signature, self.source, self.pos = name, signature, name, pos
@@ -475,13 +479,16 @@ class Parser:
             except TypeError as e:
                 raise ParseError(tok.pos, tok.source, str(e))
             return IntrinsicOp(intrinsic, tok.pos)
-        elif tok.ttype == TokenType.Identifier and tok.source in self.constants:
+        elif (tok.ttype == TokenType.Identifier
+              and tok.source in self.constants):
             validate_stack(stack, [], ['int'])
             return PushInt(self.constants[tok.source], tok.pos, tok.source)
         elif tok.ttype == TokenType.Identifier and tok.source in self.funcs:
             args, rets = self.funcs[tok.source]
             validate_stack(stack, args, rets)
             return FunctionCall(tok.source, (args, rets), tok.pos)
+        elif tok.ttype == TokenType.Identifier:
+            raise ParseError(tok.pos, f'undefined name \'{tok.source}\'')
         elif tok.ttype == TokenType.Number:
             validate_stack(stack, [], ['int'])
             return PushInt(int(tok.source), tok.pos, tok.source)
@@ -507,6 +514,10 @@ class Parser:
             assert_ex(if_false_stack == if_true_stack, ParseError(
                 end.pos, 'if-else construct has two different stack results.'))
             return Conditional(if_true, if_false, tok.pos)
+        elif tok.ttype == TokenType.String:
+            validate_stack(stack, [], ['ptr'])
+            return PushStr(tok.source.removeprefix('"').removesuffix('"'),
+                           tok.pos, tok.source)
         else:
             assert False, "unexpected token: "+str(tok)
 
@@ -602,6 +613,7 @@ class QbeBackend(CompilerBackend):
     }
     stack_bump: int = 0
     block_bump: int = 0
+    strings: dict[str, str] = {}
     stack: list[tuple[str, str]] = []
 
     def pre_compile_function(self, name: str):
@@ -784,11 +796,18 @@ class QbeBackend(CompilerBackend):
             self.push((result, rets[0]))
         self.inst(inst)
 
+    def compile_str(self, op: PushStr):
+        if op.value not in self.strings:
+            self.strings[op.value] = f'$s{len(self.strings)}'
+        self.push((self.strings[op.value], 'ptr'))
+
     def compile_op(self, op: Op):
         if isinstance(op, IntrinsicOp):
             self.compile_intrinsicop(op)
         elif isinstance(op, PushInt):
             self.push((op.value, 'int'))
+        elif isinstance(op, PushStr):
+            self.compile_str(op)
         elif isinstance(op, Conditional):
             self.compile_conditional(op)
         elif isinstance(op, FunctionCall):
@@ -818,6 +837,11 @@ class QbeBackend(CompilerBackend):
         else:
             self.inst('ret')
         self.asm += '}'
+        string_section = ''
+        for s in self.strings:
+            symbol = self.strings[s]
+            string_section += 'data '+symbol+' = { b "'+s+'", b 0 }\n'
+        self.asm = string_section + self.asm
 
 
 def shift(argv: list[str]) -> tuple[str, list[str]]:

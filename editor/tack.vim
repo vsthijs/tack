@@ -4,11 +4,11 @@ syntax match tackIdentifier "[a-zA-Z_][a-zA-Z_0-9]*"
 hi def link tackIdentifier Identifier
 
 " Highlight instructions
-syntax keyword tackInstruction not neg dup drop swap rot over + -
+syntax keyword tackInstruction not neg dup drop swap rot over
 hi def link tackInstruction Statement
 
 " Highlight types
-syntax keyword tackType int bool uint
+syntax keyword tackType int bool uint ptr
 hi def link tackType Type
 
 " Highlight keywords

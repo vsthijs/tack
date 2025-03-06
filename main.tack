@@ -1,6 +1,6 @@
-func putd int -> extern
+func puts ptr -> extern
 
 func main -> int do
-	69 putd
+	"hello world" puts
 	0
 end
