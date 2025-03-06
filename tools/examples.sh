@@ -10,7 +10,7 @@ if [ ! -e "tack" ]; then
 	exit 1
 fi
 
-for file in examples/*; do
+for file in examples/*.tack; do
 	echo "compiling $file"
 	./tack $file
 done

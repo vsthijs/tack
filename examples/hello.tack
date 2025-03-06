@@ -1,7 +1,7 @@
-func puts ptr -> extern
+include "stdio.tack"
 
 func main int ptr -> int do
     drop drop
     "Hello, World!" puts
-    0
+    drop 0
 end
