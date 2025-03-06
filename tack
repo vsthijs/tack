@@ -12,6 +12,7 @@ import sys
 import subprocess
 import tempfile
 import os
+import io
 
 DEBUG = True
 
@@ -71,6 +72,7 @@ class TokenType(Enum):
     If = auto()
     Else = auto()
     Extern = auto()
+    Include = auto()
 
     Not = auto()
     Neg = auto()
@@ -92,6 +94,7 @@ KEYWORDS: dict[str, TokenType] = {
     'if': TokenType.If,
     'else': TokenType.Else,
     'extern': TokenType.Extern,
+    'include': TokenType.Include,
     'not': TokenType.Not,
     'neg': TokenType.Neg,
     'dup': TokenType.Dup,
@@ -248,6 +251,9 @@ class Lexer:
         self.putback: str | None = None
         self.lookahead: list[Token] = []
         self.position = Position(0, 0)
+
+    def __del__(self):
+        self.stream.close()
 
     def peek_char(self) -> str:
         self.putback = self.get_char()
@@ -418,6 +424,7 @@ class Conditional(Op):
 class Parser:
     def __init__(self, lexer: Lexer) -> None:
         self.lexer = lexer
+        self.other_parser: Parser | None = None
         self.constants: dict[str, int] = {}
         self.funcs: dict[str, tuple[TypeStack, TypeStack]] = {}
 
@@ -568,6 +575,16 @@ class Parser:
         only parses constructs that can occur in the toplevel of the
         translation unit
         """
+        if self.other_parser:
+            node = self.other_parser.next_tl()
+            if node is None:
+                # transfer all info to this scope
+                self.funcs.update(self.other_parser.funcs)
+                self.constants.update(self.other_parser.constants)
+                self.other_parser = None
+            else:
+                return node
+
         try:
             tok = self.lexer.peek()
         except IndexError:
@@ -580,6 +597,16 @@ class Parser:
             funcdef = self.next_func()
             self.funcs[funcdef.name] = funcdef.signature
             return funcdef
+        elif tok.ttype == TokenType.Include:
+            self.lexer.next()  # consume the include token
+            assert_ex(
+                (path := self.lexer.next()).ttype == TokenType.String,
+                ParseError(path.pos,
+                           'expected include path after include keyword'))
+            path = path.source.removeprefix('"').removesuffix('"')
+            file = open(path)
+            self.other_parser = Parser(Lexer(file))
+            return self.next_tl()
         else:
             raise ParseError(tok.pos, f'unexpected token \'{tok.source}\'')
 

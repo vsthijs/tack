@@ -1,4 +1,4 @@
-func puts ptr -> extern
+include "libc.tack"
 
 func main -> int do
 	"hello world" puts
