@@ -33,7 +33,7 @@ The language is stack-based, so the syntax looks like
 [FORTH](https://en.wikipedia.org/wiki/Forth_(programming_language)). A value
 like `0` or `"Hello, World!"` is pushed to the stack, and when the `puts`
 function from libc is called, it pops the value from stack. Then the `0` that
-is pushed in the end of the function is the return value. See [examples](examples/]
+is pushed in the end of the function is the return value. See [examples](examples/)
 for more syntax.
 
 ## Compatibility
