@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 
-# TODO: add include statement
 # TODO: add loops
+
 # TODO: test intrinsics
+
 # TODO: add comments
+
+# TODO: add include guard
+# to not keep recursivly importing already imported files
 
 from enum import Enum, auto
 from dataclasses import dataclass
@@ -57,7 +61,7 @@ class ParseError(Exception):
         super().__init__(' '.join(str(a) for a in args))
 
 
-TYPES: list[str] = ['int', 'bool', 'ptr']
+TYPES: list[str] = ['int', 'bool', 'long', 'ptr']
 
 
 class TokenType(Enum):
@@ -97,9 +101,13 @@ class TokenType(Enum):
     Swap = auto()
     Rot = auto()
     Over = auto()
+
     Int = auto()
     Bool = auto()
     Ptr = auto()
+    Long = auto()
+
+    Str = auto()  # type alias for ptr
 
 
 KEYWORDS: dict[str, TokenType] = {
@@ -120,7 +128,9 @@ KEYWORDS: dict[str, TokenType] = {
     'over': TokenType.Over,
     'int': TokenType.Int,
     'bool': TokenType.Bool,
-    'ptr': TokenType.Ptr
+    'ptr': TokenType.Ptr,
+    'long': TokenType.Long,
+    'str': TokenType.Str
 }
 
 
@@ -150,6 +160,8 @@ class Intrinsic(Enum):
     Int = auto()
     Bool = auto()
     Ptr = auto()
+    Long = auto()
+    Str = auto()
 
 
 def intrinsic2str(i: Intrinsic) -> str:
@@ -177,7 +189,9 @@ def intrinsic2str(i: Intrinsic) -> str:
         Intrinsic.Over: 'over',
         Intrinsic.Int: 'int',
         Intrinsic.Bool: 'bool',
-        Intrinsic.Ptr: 'ptr'
+        Intrinsic.Ptr: 'ptr',
+        Intrinsic.Long: 'long',
+        Intrinsic.Str: 'str',
     }[i]
 
 
@@ -205,7 +219,9 @@ INTRINSICS: dict[TokenType, tuple[Intrinsic, list[str], list[str]]] = {
     TokenType.Over: (Intrinsic.Over, ['a', 'b'], ['a', 'b', 'a']),
     TokenType.Int: (Intrinsic.Int, ['a'], ['int']),
     TokenType.Bool: (Intrinsic.Bool, ['a'], ['bool']),
-    TokenType.Bool: (Intrinsic.Bool, ['a'], ['ptr']),
+    TokenType.Ptr: (Intrinsic.Ptr, ['a'], ['ptr']),
+    TokenType.Long: (Intrinsic.Long, ['a'], ['long']),
+    TokenType.Str: (Intrinsic.Str, ['a'], ['ptr']),
 }
 
 TypeStack = list[str]
@@ -674,6 +690,7 @@ class QbeBackend(CompilerBackend):
         'int': 'w',
         'bool': 'w',
         'ptr': 'l',
+        'long': 'l',
     }
     stack_bump: int = 0
     block_bump: int = 0
@@ -812,6 +829,15 @@ class QbeBackend(CompilerBackend):
 
             case Intrinsic.Bool:
                 self.stack[-1] = (self.stack[-1][0], 'bool')
+
+            case Intrinsic.Ptr:
+                self.stack[-1] = (self.stack[-1][0], 'ptr')
+
+            case Intrinsic.Long:
+                self.stack[-1] = (self.stack[-1][0], 'long')
+
+            case Intrinsic.Str:
+                self.stack[-1] = (self.stack[-1][0], 'ptr')
 
     def compile_conditional(self, op: Conditional):
         if_true_block = self.block()

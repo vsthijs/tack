@@ -8,7 +8,7 @@ syntax keyword tackInstruction not neg dup drop swap rot over
 hi def link tackInstruction Statement
 
 " Highlight types
-syntax keyword tackType int bool uint ptr
+syntax keyword tackType int uint bool ptr str long ulong
 hi def link tackType Type
 
 " Highlight keywords

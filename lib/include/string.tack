@@ -1,0 +1,14 @@
+func memcpy ptr ptr long -> ptr extern
+func memmove ptr ptr long -> ptr extern
+func memset ptr int long -> ptr extern
+func memcmp ptr ptr long -> int extern
+func memchr ptr int long -> ptr extern
+
+func strcpy str str -> str extern
+func strncpy str str long -> str extern
+
+func strcat str str -> str extern
+func strncat str str long -> str extern
+
+
+func strlen str -> long extern

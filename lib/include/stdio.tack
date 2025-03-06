@@ -1,0 +1,26 @@
+func fopen ptr ptr -> ptr extern
+func freopen ptr ptr ptr -> ptr extern
+func fclose ptr -> int extern
+
+func remove ptr -> int extern
+func rename ptr -> int extern
+
+func fgetc ptr -> int extern
+func getc ptr -> int extern
+func getchar -> int extern
+func ungetc int, ptr -> int extern
+
+func fputc int ptr -> int extern
+func putc int ptr -> int extern
+func putchar int -> int extern
+
+func fgets ptr int ptr -> ptr extern
+
+func fputs ptr ptr -> int extern
+func puts ptr -> int extern
+
+func perror ptr -> extern
+
+func tmpnam ptr -> ptr extern
+func tmpfile -> ptr extern
+
