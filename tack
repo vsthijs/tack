@@ -3,6 +3,7 @@
 # TODO: add include statement
 # TODO: add loops
 # TODO: test intrinsics
+# TODO: add comments
 
 from enum import Enum, auto
 from dataclasses import dataclass
@@ -12,9 +13,9 @@ import sys
 import subprocess
 import tempfile
 import os
-import io
 
-DEBUG = True
+DEBUG = False
+VERBOSE = False
 
 
 def assert_ex(cond: bool, exception: Exception):
@@ -26,6 +27,11 @@ def eprint(*values: str, sep: str = ' ', end='\n', **kwargs):
     return print(*values, sep=sep, end=end, file=sys.stderr, **kwargs)
 
 
+def verbose(*values: str, sep: str = ' ', end='\n', **kwargs):
+    if VERBOSE:
+        print(*values, sep=sep, end=end, **kwargs)
+
+
 def get_stdlib() -> str:
     basepath = os.path.dirname(__file__)
     if os.path.exists(path := os.path.join(basepath, 'libtack.a')):
@@ -34,6 +40,16 @@ def get_stdlib() -> str:
         return path
     eprint(f'{sys.argv[0]}: error: could not find libtack.a')
     exit(1)
+
+
+def get_include_path() -> list[str]:
+    pathlist = ['/usr/include']
+    basepath = os.path.dirname(__file__)
+    if os.path.exists(path := os.path.join(basepath, 'lib', 'include')):
+        pathlist.append(path)
+    else:
+        print(f"warning: could not find stdlib include directory at {path}")
+    return pathlist
 
 
 class ParseError(Exception):
@@ -233,9 +249,12 @@ def validate_stack(stack: TypeStack, args: TypeStack, rets: TypeStack):
 class Position:
     line: int
     column: int
+    file: str | None = None
 
     def __repr__(self):
-        return str(self.line+1)+':'+str(self.column+1)+':'
+        return (('' if self.file is None else self.file+':')
+                + str(self.line+1)
+                + ':'+str(self.column+1)+':')
 
 
 @dataclass
@@ -251,6 +270,8 @@ class Lexer:
         self.putback: str | None = None
         self.lookahead: list[Token] = []
         self.position = Position(0, 0)
+        if hasattr(self.stream, 'name'):
+            self.position.file = self.stream.name
 
     def __del__(self):
         self.stream.close()
@@ -422,8 +443,9 @@ class Conditional(Op):
 
 
 class Parser:
-    def __init__(self, lexer: Lexer) -> None:
+    def __init__(self, lexer: Lexer, include_path: list[str] = []) -> None:
         self.lexer = lexer
+        self.include_path = include_path
         self.other_parser: Parser | None = None
         self.constants: dict[str, int] = {}
         self.funcs: dict[str, tuple[TypeStack, TypeStack]] = {}
@@ -569,6 +591,19 @@ class Parser:
             identifier.source))
         return FuncDef(identifier.source, (args, rets), ops, func.pos)
 
+    def include_file(self, path: str) -> bool:
+        if os.path.exists(path):
+            pass
+        else:
+            for ip in self.include_path:
+                if os.path.exists(expanded := os.path.join(ip, path)):
+                    path = expanded
+                    break
+            return False
+        file = open(path)
+        self.other_parser = Parser(Lexer(file))
+        return True
+
     def next_tl(self) -> AstNode | None:
         """
         Next toplevel.
@@ -604,8 +639,8 @@ class Parser:
                 ParseError(path.pos,
                            'expected include path after include keyword'))
             path = path.source.removeprefix('"').removesuffix('"')
-            file = open(path)
-            self.other_parser = Parser(Lexer(file))
+            if not self.include_file(path):
+                raise ParseError(tok.pos, f'could not find {path}')
             return self.next_tl()
         else:
             raise ParseError(tok.pos, f'unexpected token \'{tok.source}\'')
@@ -891,13 +926,17 @@ flags:
     -l <file>              - link with the given file. can be .o or .a
                              files. (only when compiling to binary)
     -nostdlib              - do not link with tack's standard library
+    -I <path>              - look in this directory when searching for files
+                             to include
+    -v                     - dump debug information
 
 to use the resulting .ssa file, qbe must be installed. use qbe to compile the
 .ssa file to an assembly file which can be compiled using your standard C
 compiler.''')
 
 
-def parse_args() -> tuple[str, str, str, list[str]]:
+def parse_args() -> tuple[str, str, str, list[str], list[str]]:
+    global VERBOSE
     argv = sys.argv.copy()
     prog, argv = shift(argv)
 
@@ -905,6 +944,7 @@ def parse_args() -> tuple[str, str, str, list[str]]:
     inputfile: str | None = None
     output_fmt: str | None = None
     link_list: list[str] = []
+    include_path: list[str] = []
     need_stdlib: bool = True
 
     while len(argv) > 0:
@@ -923,8 +963,17 @@ def parse_args() -> tuple[str, str, str, list[str]]:
         elif arg == '-l':
             file, argv = shift(argv)
             link_list.append(file)
+        elif arg.startswith('-l'):
+            link_list.append(arg.removeprefix('-l'))
         elif arg == '-nostdlib':
             need_stdlib = False
+        elif arg == '-I':
+            file, argv = shift(argv)
+            include_path.append(file)
+        elif arg.startswith('-I'):
+            include_path.append(arg.removeprefix('-I'))
+        elif arg == '-v':
+            VERBOSE = True
         else:
             assert inputfile is None, 'too many source files given'
             inputfile = arg
@@ -941,16 +990,25 @@ def parse_args() -> tuple[str, str, str, list[str]]:
     if need_stdlib and stdlib not in link_list:
         link_list.append(stdlib)
 
-    return output, inputfile, output_fmt, link_list
+    if need_stdlib:
+        for path in get_include_path():
+            if path not in include_path:
+                include_path.append(path)
+
+    return output, inputfile, output_fmt, link_list, include_path
 
 
 def main():
-    output, inputfile, output_fmt, link_list = parse_args()
+    output, inputfile, output_fmt, link_list, include_path = parse_args()
 
+    verbose('include path:\n-', '\n- '.join(include_path))
+    verbose('link list:\n-', '\n- '.join(link_list))
+
+    verbose('generating QBE IR')
     backend = QbeBackend()
     with open(inputfile) as rf:
         try:
-            parser = Parser(Lexer(rf))
+            parser = Parser(Lexer(rf), include_path)
             backend.compile_from_parser(parser)
         except ParseError as e:
             raise e
@@ -959,12 +1017,15 @@ def main():
     ssa_form = backend.finalize()
 
     if output_fmt == 'ssa':
+        verbose('writing', output)
         with open(output, 'w') as wf:
             wf.write(ssa_form)
     elif output_fmt == 's':
+        verbose('cmd:', 'qbe', '-o', output)
         exit(subprocess.run(['qbe', '-o', output], stdout=subprocess.PIPE,
              input=ssa_form.encode()).returncode)
     else:
+        verbose('cmd:', 'qbe')
         qbe = subprocess.Popen(
             ['qbe'],
             stdin=subprocess.PIPE,
@@ -978,7 +1039,9 @@ def main():
             ofile = output
         else:
             handle, ofile = tempfile.mkstemp('.o')
+            verbose('created temp file', ofile)
 
+        verbose('cmd:', 'as', '-o', ofile)
         gas = subprocess.Popen(
             ['as', '-o', ofile],
             stdin=subprocess.PIPE,
@@ -993,15 +1056,17 @@ def main():
             eprint('as:', stderr.decode())
             exit(gas.returncode)
 
+        verbose('cmd:', 'cc', '-o', output, ofile, *link_list)
         cc_code = subprocess.run(
             ['cc', '-o', output, ofile, *link_list]).returncode
 
+        verbose('rm', ofile)
         os.remove(ofile)
         exit(cc_code)
 
 
 if __name__ == '__main__':
-    if DEBUG:
+    if DEBUG or VERBOSE:
         main()
     else:
         try:
