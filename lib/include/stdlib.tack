@@ -1,0 +1,33 @@
+func atoi str -> int extern
+func atol str -> long extern
+
+func rand -> int extern
+
+# TODO: add support for uint datatype
+# func srand uint -> extern
+
+func malloc long -> ptr extern
+func calloc long long -> ptr extern
+func realloc ptr long -> ptr extern
+func free ptr -> extern
+func aligned_alloc long long -> extern
+
+func abort -> extern
+# TODO: int atexit (void (*) (void));
+func exit int -> extern
+func _Exit int -> extern
+# TODO: int at_quick_exit (void (*) (void));
+func quick_exit int -> extern
+
+func getenv str -> str extern
+
+func system str -> int extern
+
+# TODO: bsearch qsort
+
+func abs int -> int extern
+func labs long -> long extern
+
+const EXIT_FAILURE 1
+const EXIT_SUCCESS 0
+

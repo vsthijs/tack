@@ -1,0 +1,6 @@
+func assert bool -> do
+	not if
+		"assertion failed" puts drop
+		1 exit
+	end
+end

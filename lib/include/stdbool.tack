@@ -1,0 +1,2 @@
+func true -> bool do 1 bool end
+func false -> bool do 0 bool end
