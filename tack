@@ -651,10 +651,10 @@ class Parser:
                 # transfer all info to this scope
                 self.funcs.update(self.other_parser.funcs)
                 self.constants.update(self.other_parser.constants)
+                self.include_history.extend(self.other_parser.include_history)
                 self.other_parser = None
             else:
                 return node
-
         try:
             tok = self.lexer.peek()
         except IndexError:
