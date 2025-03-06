@@ -1,0 +1,6 @@
+func putd int -> extern
+
+func main -> int do
+	69 putd
+	0
+end

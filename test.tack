@@ -1,6 +1,0 @@
-func and int int -> int do & end
-func or int int -> int do | end
-
-func test int int -> int do
-	and
-end

@@ -8,11 +8,11 @@ syntax keyword tackInstruction not neg dup drop swap rot over + -
 hi def link tackInstruction Statement
 
 " Highlight types
-syntax keyword tackType int
+syntax keyword tackType int bool uint
 hi def link tackType Type
 
 " Highlight keywords
-syntax keyword tackKeyword func const do end
+syntax keyword tackKeyword func const do end extern
 hi def link tackKeyword Keyword
 
 " Match strings
