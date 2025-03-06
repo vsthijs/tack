@@ -1,5 +1,8 @@
 " Tack Syntax Highlighting
 
+syntax match tackComment "#.*$"
+hi def link tackComment Comment
+
 syntax match tackIdentifier "[a-zA-Z_][a-zA-Z_0-9]*"
 hi def link tackIdentifier Identifier
 

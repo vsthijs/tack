@@ -4,8 +4,6 @@
 
 # TODO: test intrinsics
 
-# TODO: add comments
-
 # TODO: add include guard
 # to not keep recursivly importing already imported files
 
@@ -315,8 +313,15 @@ class Lexer:
         return c
 
     def add_lookahead(self) -> bool:
-        while (ch := self.peek_char()) and ch.isspace():
-            self.consume_char()
+        while True:
+            if (ch := self.peek_char()) and ch.isspace():
+                self.consume_char()
+            elif (ch := self.peek_char()) and ch == '#':
+                while self.peek_char() != '\n':
+                    self.consume_char()
+                self.consume_char()  # also skip the newline
+            else:
+                break
 
         pos = copy.copy(self.position)
         source = ''
@@ -611,11 +616,14 @@ class Parser:
         if os.path.exists(path):
             pass
         else:
+            found = False
             for ip in self.include_path:
                 if os.path.exists(expanded := os.path.join(ip, path)):
                     path = expanded
+                    found = True
                     break
-            return False
+            if not found:
+                return False
         file = open(path)
         self.other_parser = Parser(Lexer(file))
         return True

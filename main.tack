@@ -1,6 +1,7 @@
-include "libc.tack"
+include "stdio.tack"
 
-func main -> int do
-	"hello world" puts
-	0
+func main ptr int -> int do
+	drop drop
+	"hello world" puts # print hello world to stdout
+	drop 0
 end
