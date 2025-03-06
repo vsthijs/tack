@@ -8,7 +8,7 @@ func rename ptr -> int extern
 func fgetc ptr -> int extern
 func getc ptr -> int extern
 func getchar -> int extern
-func ungetc int, ptr -> int extern
+func ungetc int ptr -> int extern
 
 func fputc int ptr -> int extern
 func putc int ptr -> int extern
