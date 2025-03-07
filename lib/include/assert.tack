@@ -1,3 +1,6 @@
+include "stdio.tack"
+include "stdlib.tack"
+
 func assert bool -> do
 	not if
 		"assertion failed" puts drop
