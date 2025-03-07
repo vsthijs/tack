@@ -1,0 +1,48 @@
+# This is a test program to verify the stack and the type checking.
+
+include "assert.tack"
+
+const A 33
+const B 43
+const C 54
+
+func test_swap -> do
+	A B swap
+	A = assert
+	B = assert
+end
+
+func test_dup -> do
+	A dup
+	A = assert
+	A = assert
+end
+
+func test_over -> do
+	A B over
+	A = assert
+	B = assert
+	A = assert
+end
+
+func test_drop -> do
+	A B drop
+	A = assert
+end
+
+func test_rot -> do
+	A B C rot
+	A = assert
+	C = assert
+	B = assert
+end
+
+func main int ptr -> int do
+	drop drop
+	test_swap
+	test_dup
+	test_over
+	test_drop
+	test_rot
+	0
+end

@@ -1,0 +1,11 @@
+include "stdio.tack"
+
+func main int ptr -> int do
+    swap  # int ptr -> ptr int
+    1
+    <= # ptr bool
+    if # ptr
+        "usage: cat <file>" puts drop
+    end # ptr
+    drop 0 # int
+end
