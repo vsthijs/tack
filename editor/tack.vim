@@ -15,7 +15,7 @@ syntax keyword tackType int uint bool ptr str long ulong
 hi def link tackType Type
 
 " Highlight keywords
-syntax keyword tackKeyword func const do end extern include
+syntax keyword tackKeyword func const if else do end extern include
 hi def link tackKeyword Keyword
 
 " Match strings
