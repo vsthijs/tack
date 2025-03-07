@@ -8,7 +8,13 @@
 
 # TODO: add memory read and write intrinsics
 
-# TODO: add typedef
+# TODO: add more examples
+
+# TODO: add typedef statement
+
+# TODO: support small compile-time expressions in const value
+
+# TODO: add static memory/extern variables
 
 from enum import Enum, auto
 from dataclasses import dataclass
@@ -19,7 +25,7 @@ import subprocess
 import tempfile
 import os
 
-DEBUG = False
+DEBUG = True
 VERBOSE = False
 
 
@@ -246,20 +252,28 @@ def validate_stack(stack: TypeStack, args: TypeStack, rets: TypeStack):
         actual = stack.pop()
         if arg not in TYPES:
             if arg not in generics:
+                verbose(f'pop {actual} ({arg})')
                 generics[arg] = actual
             else:
-                assert_ex(
-                    match_type(generics[arg], actual),
-                    TypeError('mismatching types on the stack.\n|- got: ' +
-                              ' '.join(oldstack[-len(args):]) +
-                              '\n`- but expected: '
-                              + ' '.join(args)))
+                verbose(f'pop {actual} ({arg})')
+                assert_ex(generics[arg] == actual,
+                          TypeError('mismatching types on the stack.\n|- got: ' +
+                                    ' '.join(oldstack[-len(args):]) +
+                                    '\n`- but expected: '
+                                    + ' '.join(args)))
         else:
-            assert_ex(match_type(arg, actual),
+            verbose(f'pop {actual}')
+            assert_ex(arg == actual,
                       TypeError('mismatching types on the stack.\n|- got: ' +
                                 ' '.join(oldstack[-len(args):]) +
                                 '\n`- but expected: ' + ' '.join(args)))
-    stack.extend(rets)
+    for ret in reversed(rets):
+        if ret in TYPES:
+            verbose(f'push {ret}')
+            stack.append(ret)
+        else:
+            verbose(f'push {generics[ret]} ({ret})')
+            stack.append(generics[ret])
 
 
 @dataclass
@@ -534,6 +548,7 @@ class Parser:
         if tok.ttype in INTRINSICS:
             intrinsic, args, rets = INTRINSICS[tok.ttype]
             try:
+                verbose(f'intrinsic {intrinsic2str(intrinsic)}')
                 validate_stack(stack, args, rets)
             except TypeError as e:
                 raise ParseError(tok.pos, tok.source, str(e))
@@ -552,7 +567,7 @@ class Parser:
             validate_stack(stack, [], ['int'])
             return PushInt(int(tok.source), tok.pos, tok.source)
         elif tok.ttype == TokenType.If:
-            validate_stack(stack, ['int'], [])
+            validate_stack(stack, ['bool'], [])
             if_true: list[Op] = []
             if_true_stack = stack.copy()
             while self.lexer.peek().ttype not in [TokenType.End,
@@ -602,6 +617,7 @@ class Parser:
                            extern=True)
         ops: list[Op] = []
         stack: TypeStack = args.copy()
+        verbose(f'start stack: {stack}')
         while (tok := self.lexer.next()).ttype != TokenType.End:
             try:
                 op = self.parse_op(tok, stack)
@@ -697,8 +713,12 @@ class CompilerBackend:
                 self.compile_function(node)
                 self.asm += '\n\n'
 
+    def assemble(self) -> None:
+        pass
+
     def finalize(self) -> str:
         try:
+            self.assemble()
             return self.asm.strip()
         finally:
             del self  # not usable anymore so destroy self
@@ -809,7 +829,7 @@ class QbeBackend(CompilerBackend):
                     ParseError(op.pos,
                                f'expected int or bool value for {intrinsic2str(op.intrinsic)} operation')
                 )
-                self.inst(f'{b} ={self.types[at]} ceq{self.types[bt]} {a}, 0')
+                self.inst(f'{b} ={self.types[at]} ceq{self.types[at]} {a}, 0')
                 self.push((b, at))
 
             case Intrinsic.Neg:
@@ -946,6 +966,8 @@ class QbeBackend(CompilerBackend):
         else:
             self.inst('ret')
         self.asm += '}'
+
+    def assemble(self) -> None:
         string_section = ''
         for s in self.strings:
             symbol = self.strings[s]
