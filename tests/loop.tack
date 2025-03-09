@@ -1,0 +1,22 @@
+include "stdbool.tack"
+
+func putd int -> extern
+
+func gz int -> bool do
+	0 >=
+end
+
+func dec int -> int do
+	1 -
+end
+
+func main int ptr -> int do
+	drop drop
+	10  # repeat 10 times
+	dup gz
+	loop
+		dec
+		dup putd
+		dup gz
+	end
+end

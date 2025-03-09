@@ -19,6 +19,7 @@ for file in tests/*.tack; do
 		echo "compiling $file succeeded"
 	fi
 	basefile=${file%.*}
+	$basefile
 	if [ $? -eq 0 ]; then
 		echo "test $basefile succeeded"
 		rm $basefile

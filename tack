@@ -155,6 +155,7 @@ class TokenType(Enum):
     Else = auto()
     Extern = auto()
     Include = auto()
+    Loop = auto()
 
     Not = auto()
     Neg = auto()
@@ -181,6 +182,7 @@ KEYWORDS: dict[str, TokenType] = {
     'else': TokenType.Else,
     'extern': TokenType.Extern,
     'include': TokenType.Include,
+    'loop': TokenType.Loop,
     'not': TokenType.Not,
     'neg': TokenType.Neg,
     'dup': TokenType.Dup,
@@ -289,14 +291,52 @@ INTRINSICS: dict[TokenType, tuple[Intrinsic, list[str], list[str]]] = {
 TypeStack = list[str]
 
 
-def match_type(expected: str, found: str) -> bool:
-    return expected == found
-
-
 def validate_stack(stack: TypeStack, args: TypeStack, rets: TypeStack):
+    # applies a mutation to the stack and checks the types
+
+    # NOTE: when types don't match correctly, a TypeError is raised.
+    # It can be reraised be the caller to add line number, etc.
+
+    # When everything is correct, stack[-len(args):] == args
+
+    assert_ex(len(stack) >= len(args), TypeError(
+        f'not enough values on the stack. expected {args}, got {stack}'))
+
+    accepted_args = [] if len(args) == 0 else stack[-len(args):]
+    assert len(accepted_args) == len(
+        args), f'internal error, got {len(accepted_args)} == expected {len(args)}'
+
+    for ii in accepted_args:  # remove the accepted args from the stack
+        stack.pop()
+
+    generics: dict[str, str] = {}  # generic type mapping.
+    resolved_args: TypeStack = []  # resolved generics
+    for arg, got in zip(args, accepted_args):
+        if arg in TYPES:
+            pass
+        elif arg in generics:
+            arg = generics[arg]
+        else:
+            generics[arg] = got
+            arg = got
+        resolved_args.append(arg)
+
+    if resolved_args != accepted_args:
+        raise TypeError(
+            f'mismatching types: expected {resolved_args}, but got {accepted_args}')
+
+    for ret in rets:
+        if ret in generics:
+            stack.append(generics[ret])
+        else:
+            stack.append(ret)
+
+
+def validate_stack_old(stack: TypeStack, args: TypeStack, rets: TypeStack):
     """
     applies a mutation to a type stack after checking types.
     """
+    # NOTE: this function is broken, and is rewritten in validate_stack(...)
     assert_ex(len(stack) >= len(args), TypeError(
         'not enough values on the stack.\n|- expected: ' +
         ' '.join(args)+'\n`- got: ' + ' '.join(stack)
@@ -318,6 +358,7 @@ def validate_stack(stack: TypeStack, args: TypeStack, rets: TypeStack):
                                     + ' '.join(args)))
         else:
             verbose(f'pop {actual}')
+            verbose(f'assert {arg} == {actual}')
             assert_ex(arg == actual,
                       TypeError('mismatching types on the stack.\n|- got: ' +
                                 ' '.join(oldstack[-len(args):]) +
@@ -535,6 +576,13 @@ class Conditional(Op):
         self.source += ' end'
 
 
+class Loop(Op):
+    def __init__(self, body: list[Op], pos: Position):
+        self.body, self.pos = body, pos
+        self.source = 'loop ' + ' '.join(a.source for a in self.body)
+        self.source += ' end'
+
+
 class Parser:
     def __init__(self, lexer: Lexer, include_path: list[str] = [],
                  include_history: list[str] = [],
@@ -643,6 +691,19 @@ class Parser:
             assert_ex(if_false_stack == if_true_stack, ParseError(
                 end.pos, 'if-else construct has two different stack results.'))
             return Conditional(if_true, if_false, tok.pos)
+        elif tok.ttype == TokenType.Loop:
+            loop_stack = stack.copy()
+            validate_stack(loop_stack, ['bool'], [])
+            body: list[Op] = []
+            while self.lexer.peek().ttype != TokenType.End:
+                body.append(self.parse_op(self.lexer.next(), loop_stack))
+            assert (end := self.lexer.next()).ttype == TokenType.End
+            assert_ex(loop_stack == stack,
+                      ParseError(end.pos,
+                                 'loop construct generates an incorrect stack')
+                      )
+            validate_stack(stack, ['bool'], [])
+            return Loop(body, tok.pos)
         elif tok.ttype == TokenType.String:
             validate_stack(stack, [], ['ptr'])
             return PushStr(tok.source.removeprefix('"').removesuffix('"'),
@@ -963,6 +1024,21 @@ class QbeBackend(CompilerBackend):
                           + f'{if_true_block} {itr[0]}, {if_false_block} {ifa[0]}')
                 self.stack[idx] = (result, *self.stack[idx][1:])
 
+    def compile_loop(self, op: Loop):
+        # FIXME: temporaries might change in between iterations
+        loop_block = self.block()
+        end_block = self.block()
+        condition0 = self.pop()
+        self.inst(f'jnz {condition0[0]}, {loop_block}, {end_block}')
+        self.asm += loop_block + '\n'
+
+        for operation in op.body:
+            self.compile_op(operation)
+
+        condition1 = self.pop()
+        self.inst(f'jnz {condition1[0]}, {loop_block}, {end_block}')
+        self.asm += end_block + '\n'
+
     def compile_function_call(self, op: FunctionCall):
         args, rets = op.signature
         inst = ''
@@ -985,24 +1061,31 @@ class QbeBackend(CompilerBackend):
             self.strings[op.value] = f'$s{len(self.strings)}'
         self.push((self.strings[op.value], 'ptr'))
 
+    def compile_int(self, op: PushInt):
+        self.push((op.value, 'int'))
+
     def compile_op(self, op: Op):
         if isinstance(op, IntrinsicOp):
             self.compile_intrinsicop(op)
         elif isinstance(op, PushInt):
-            self.push((op.value, 'int'))
+            self.compile_int(op)
         elif isinstance(op, PushStr):
             self.compile_str(op)
         elif isinstance(op, Conditional):
             self.compile_conditional(op)
         elif isinstance(op, FunctionCall):
             self.compile_function_call(op)
+        elif isinstance(op, Loop):
+            self.compile_loop(op)
         else:
             assert False, "unreachable: unknown op: "+str(op)
 
     def compile_function(self, function: FuncDef):
         assert_ex(len(function.signature[1]) <= 1, ParseError(
             function.pos, 'C compatible function can have at most 1 return value.'))
-        self.asm += 'export function '
+        if function.name == 'main':
+            self.asm += 'export '
+        self.asm += 'function '
         if len(function.signature[1]):
             self.asm += self.types[function.signature[1][0]]+' '
         self.asm += '$'+function.name.strip() + '('
